@@ -17,11 +17,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(HEADER_FILES
-	"NiViewer.h"
+	"src/NiViewer.h"
 )
 
 set(SOURCE_FILES
-	"NiViewer.cpp"
+	"src/NiViewer.cpp"
 )
 
 add_executable (NiViewer ${SOURCE_FILES} ${HEADER_FILES})
