@@ -13,6 +13,7 @@
 #include "AssetExtraction/TextureManager.hpp"
 #include "Rendering/SceneRenderer.hpp"
 #include "UI/ViewerUI.hpp"
+#include "AssetExtraction/ZoneParser.hpp"
 
 #include <iostream>
 #include <filesystem>
@@ -128,7 +129,7 @@ int main(int argc, char** argv) {
             for (auto& mesh : sceneData.meshes) {
                 if (mesh.hasTexture) {
                     mesh.textureId = textureManager.getOrCreateTexture(
-                        file, mesh.texturePath, mesh.embeddedPixelDataIndex, ui.customTextureDir, modelDir
+                        file, mesh.texturePath, mesh.embeddedPixelDataIndex, ui.getCustomTextureDir(), modelDir
                     );
                 }
             }
@@ -155,7 +156,7 @@ int main(int argc, char** argv) {
             for (auto& mesh : sceneData.meshes) {
                 if (mesh.hasTexture) {
                     mesh.textureId = textureManager.getOrCreateTexture(
-                        file, mesh.texturePath, mesh.embeddedPixelDataIndex, ui.customTextureDir, modelDir
+                        file, mesh.texturePath, mesh.embeddedPixelDataIndex, ui.getCustomTextureDir(), modelDir
                     );
                 }
             }
@@ -176,6 +177,16 @@ int main(int argc, char** argv) {
             camera.frameBounds(sceneData.getEffectiveMinBound(), sceneData.getEffectiveMaxBound());
         }
     };
+    ui.getZoneExplorer().onLoadXmlRequested = [&](const std::string& path) {
+        try {
+            std::vector<AccessPass> passes = ZoneParser::ParseFromFile(path);
+            ui.getZoneExplorer().setPasses(passes);
+            ui.getZoneExplorer().setLoadStatus(true, "Loaded " + std::to_string(passes.size()) + " passes.");
+        }
+        catch (const std::exception& e) {
+            ui.getZoneExplorer().setLoadStatus(false, std::string("Failed: ") + e.what());
+        }
+    };
 
     // Load initial sample
     loadNifFile(currentFilePath);
@@ -192,7 +203,7 @@ int main(int argc, char** argv) {
             for (const auto& pathStr : dropped) {
                 try {
                     if (fs::is_directory(pathStr)) {
-                        strncpy_s(ui.customTextureDir, pathStr.c_str(), sizeof(ui.customTextureDir) - 1);
+                        ui.setCustomTextureDir(pathStr);
                         reloadTextures();
                     }
                     else if (pathStr.size() >= 4) {
@@ -203,7 +214,7 @@ int main(int argc, char** argv) {
                         }
                         else if (ext == ".dds") {
                             std::string dir = fs::path(pathStr).parent_path().string();
-                            strncpy_s(ui.customTextureDir, dir.c_str(), sizeof(ui.customTextureDir) - 1);
+                            ui.setCustomTextureDir(dir);
                             reloadTextures();
                         }
                     }

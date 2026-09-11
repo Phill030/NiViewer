@@ -3,6 +3,8 @@
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <string>
+#include <vector>
+#include <memory>
 #include <functional>
 
 #include "Core/SceneTypes.hpp"
@@ -10,16 +12,18 @@
 #include "AssetExtraction/TextureManager.hpp"
 #include "Core/Camera.hpp"
 #include "Core/Framebuffer.hpp"
+#include "UI/IViewerWindow.hpp"
+#include "UI/ViewerContext.hpp"
+#include "UI/Views/ViewportView.hpp"
+#include "UI/Views/ViewerControlsView.hpp"
+#include "UI/Views/SceneHierarchyView.hpp"
+#include "UI/Views/BlockListView.hpp"
+#include "UI/Views/ZoneExplorerView.hpp"
 
 class ViewerUI
 {
 public:
-    bool showViewerControls = true;
-    bool showSceneHierarchy = true;
-    bool showBlockList = true;
     bool layoutNeedsReset = false;
-
-    char customTextureDir[512] = "";
     char filePathBuffer[512] = "data/WC_Unicorn_DSigns_A01_KH.nif";
 
     // Callbacks to communicate with main application
@@ -27,7 +31,7 @@ public:
     std::function<void()> onReloadTextures;
     std::function<void()> onResetCamera;
 
-    ViewerUI() = default;
+    ViewerUI();
 
     void render(GLFWwindow* window,
                 SceneData& sceneData,
@@ -37,18 +41,25 @@ public:
                 TextureManager& textureManager,
                 const std::string& currentFilePath);
 
-private:
-    float menuBarHeight = 0.0f;
+    // Typed access for the app code to reach specific windows directly
+    // (e.g. feeding ZoneExplorerView data after a WAD loads, or reading
+    // the texture directory typed into Viewer Controls).
+    ZoneExplorerView& getZoneExplorer() { return *m_zoneExplorerView; }
+    const char* getCustomTextureDir() const { return m_viewerControlsView->getTextureDir(); }
+    void setCustomTextureDir(const std::string& dir) { m_viewerControlsView->setTextureDir(dir); }
 
-    void renderMainMenuBar(GLFWwindow* window, SceneData& sceneData, const std::string& currentFilePath);
-    void renderBackgroundViewport(Framebuffer& fbo, OrbitCamera& camera);
-    void renderViewerControlsWindow(SceneData& sceneData,
-                                    RenderSettings& renderSettings,
-                                    OrbitCamera& camera,
-                                    TextureManager& textureManager,
-                                    const std::string& currentFilePath,
-                                    ImGuiCond layoutCond);
-    void renderSceneHierarchyWindow(SceneData& sceneData, ImGuiCond layoutCond);
-    void renderBlockListWindow(const SceneData& sceneData, ImGuiCond layoutCond);
-    void renderSceneHierarchyTreeNode(const SceneNodeInfo& node);
+private:
+    float m_menuBarHeight = 0.0f;
+
+    // Ownership lives in m_windows; these are non-owning pointers cached
+    // at construction time purely for the typed accessors above.
+    ViewportView* m_viewportView = nullptr;
+    ViewerControlsView* m_viewerControlsView = nullptr;
+    SceneHierarchyView* m_sceneHierarchyView = nullptr;
+    BlockListView* m_blockListView = nullptr;
+    ZoneExplorerView* m_zoneExplorerView = nullptr;
+
+    std::vector<std::unique_ptr<IViewerWindow>> m_windows;
+
+    void renderMainMenuBar(GLFWwindow* window);
 };

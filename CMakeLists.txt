@@ -67,6 +67,14 @@ target_include_directories(imgui PUBLIC
 )
 target_link_libraries(imgui PUBLIC glfw opengl32)
 
+# Add PugiXML
+FetchContent_Declare(
+    pugixml
+    GIT_REPOSITORY https://github.com/zeux/pugixml.git
+    GIT_TAG        v1.14
+)
+FetchContent_MakeAvailable(pugixml)
+
 set(HEADER_FILES
 	"src/NiViewer.h"
 
@@ -74,13 +82,22 @@ set(HEADER_FILES
     "src/Core/Camera.hpp"
     "src/Core/Framebuffer.hpp"
     "src/Core/Shader.hpp"
+    "src/Core/Zone.hpp"
 
     "src/Rendering/SceneRenderer.hpp"
 
     "src/UI/ViewerUI.hpp"
+    "src/UI/IViewerWindow.hpp"
+    "src/UI/ViewerContext.hpp"
+    "src/UI/Views/BlockListView.hpp"
+    "src/UI/Views/SceneHierarchyView.hpp"
+    "src/UI/Views/ViewerControlsView.hpp"
+    "src/UI/Views/ZoneExplorerView.hpp"
+    "src/UI/Views/ViewportView.hpp"
 
     "src/AssetExtraction/MeshExtractor.hpp"
     "src/AssetExtraction/TextureManager.hpp"
+    "src/AssetExtraction/ZoneParser.hpp"
 )
 
 set(SOURCE_FILES
@@ -94,9 +111,15 @@ set(SOURCE_FILES
     "src/Rendering/SceneRenderer.cpp"
 
     "src/UI/ViewerUI.cpp"
+    "src/UI/Views/BlockListView.cpp"
+    "src/UI/Views/SceneHierarchyView.cpp"
+    "src/UI/Views/ViewerControlsView.cpp"
+    "src/UI/Views/ZoneExplorerView.cpp"
+    "src/UI/Views/ViewportView.cpp"
 
     "src/AssetExtraction/MeshExtractor.cpp"
     "src/AssetExtraction/TextureManager.cpp"
+    "src/AssetExtraction/ZoneParser.cpp"
 
 )
 
@@ -111,7 +134,7 @@ target_link_libraries(NiViewer PRIVATE NiForge)
 
 # Link GLFW, GLM, and ImGui to the NiViewer target
 target_include_directories(NiViewer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/viewer ${imgui_SOURCE_DIR}/backends ${glfw_SOURCE_DIR}/deps) # ??
-target_link_libraries(NiViewer PRIVATE NiForge imgui glm::glm opengl32)
+target_link_libraries(NiViewer PRIVATE NiForge imgui glm::glm opengl32 pugixml::pugixml)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET NiViewer PROPERTY CXX_STANDARD 20)
