@@ -16,6 +16,9 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+add_subdirectory(external/NiForge)
+
+
 set(HEADER_FILES
 	"src/NiViewer.h"
 )
@@ -26,8 +29,20 @@ set(SOURCE_FILES
 
 add_executable (NiViewer ${SOURCE_FILES} ${HEADER_FILES})
 
+# Link NiForge to the NiViewer target
+target_link_libraries(NiViewer PRIVATE NiForge)
+
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET NiViewer PROPERTY CXX_STANDARD 20)
+endif()
+
+# Copy DLL on Windows post-build
+if(WIN32)
+    add_custom_command(TARGET NiViewer POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:NiForge>
+        $<TARGET_FILE_DIR:NiViewer>
+    )
 endif()
 
 # TODO: Add tests and install targets if needed.

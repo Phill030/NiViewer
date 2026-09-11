@@ -1,0 +1,3 @@
+[submodule "external/NiForge"]
+	path = external/NiForge
+	url = https://github.com/phill030/NiForge.git
