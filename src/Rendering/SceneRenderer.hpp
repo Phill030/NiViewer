@@ -27,8 +27,10 @@ struct RenderUniforms
     GLint lightDir = -1;
     GLint useNormalsColor = -1;
     GLint diffuseTexture = -1;
+    GLint glowTexture = -1;
     GLint enableTextures = -1;
     GLint hasTexture = -1;
+    GLint hasGlowTexture = -1;
     GLint meshColor = -1;
     GLint isAdditive = -1;
     GLint alphaCutoff = -1;

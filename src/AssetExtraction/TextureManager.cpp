@@ -93,19 +93,61 @@ std::string TextureManager::resolveTextureFile(const std::string& rawPath,
                                                const std::string& customDir) {
     if (rawPath.empty()) return "";
 
+    // Also check if rawPath directly exists
+    if (fs::exists(rawPath)) return rawPath;
+
     std::string filename = fs::path(rawPath).filename().string();
+    std::string stemNif = fs::path(filename).stem().string() + ".nif";
+    std::string stemDds = fs::path(filename).stem().string() + ".dds";
+    std::string stemTga = fs::path(filename).stem().string() + ".tga";
+    std::string stemPng = fs::path(filename).stem().string() + ".png";
 
     std::vector<fs::path> searchDirs;
     if (!modelDir.empty()) {
-        searchDirs.push_back(modelDir);
-        searchDirs.push_back(fs::path(modelDir) / "Textures");
-        searchDirs.push_back(fs::path(modelDir) / "textures");
+        fs::path mPath(modelDir);
+        searchDirs.push_back(mPath);
+        searchDirs.push_back(mPath / "Textures");
+        searchDirs.push_back(mPath / "textures");
+
+        // Check parent directory and sibling directories (e.g. sibling WADs like WorldData or Shared)
+        try {
+            fs::path parent = mPath.parent_path();
+            if (!parent.empty() && fs::exists(parent) && fs::is_directory(parent)) {
+                searchDirs.push_back(parent);
+                searchDirs.push_back(parent / "Textures");
+                searchDirs.push_back(parent / "textures");
+
+                for (const auto& entry : fs::directory_iterator(parent)) {
+                    if (entry.is_directory()) {
+                        searchDirs.push_back(entry.path());
+                        searchDirs.push_back(entry.path() / "Textures");
+                        searchDirs.push_back(entry.path() / "textures");
+                    }
+                }
+            }
+        }
+        catch (...) {}
     }
+
     if (!customDir.empty()) {
-        searchDirs.push_back(customDir);
-        searchDirs.push_back(fs::path(customDir) / "Textures");
-        searchDirs.push_back(fs::path(customDir) / "textures");
+        fs::path cPath(customDir);
+        searchDirs.push_back(cPath);
+        searchDirs.push_back(cPath / "Textures");
+        searchDirs.push_back(cPath / "textures");
+        try {
+            if (fs::exists(cPath) && fs::is_directory(cPath)) {
+                for (const auto& entry : fs::directory_iterator(cPath)) {
+                    if (entry.is_directory()) {
+                        searchDirs.push_back(entry.path());
+                        searchDirs.push_back(entry.path() / "Textures");
+                        searchDirs.push_back(entry.path() / "textures");
+                    }
+                }
+            }
+        }
+        catch (...) {}
     }
+
     searchDirs.push_back(".");
     searchDirs.push_back("Textures");
     searchDirs.push_back("textures");
@@ -115,16 +157,25 @@ std::string TextureManager::resolveTextureFile(const std::string& rawPath,
     searchDirs.push_back("../data");
     searchDirs.push_back("../../data");
 
-    // Also check if rawPath directly exists
-    if (fs::exists(rawPath)) return rawPath;
-
-    // Check in each directory for exact filename
+    // Check in each directory for filename, rawPath, or alternate extensions
     for (const auto& dir : searchDirs) {
         fs::path p = dir / filename;
         if (fs::exists(p)) return p.string();
 
         fs::path pRaw = dir / rawPath;
         if (fs::exists(pRaw)) return pRaw.string();
+
+        fs::path pNif = dir / stemNif;
+        if (fs::exists(pNif)) return pNif.string();
+
+        fs::path pDds = dir / stemDds;
+        if (fs::exists(pDds)) return pDds.string();
+
+        fs::path pTga = dir / stemTga;
+        if (fs::exists(pTga)) return pTga.string();
+
+        fs::path pPng = dir / stemPng;
+        if (fs::exists(pPng)) return pPng.string();
     }
 
     return "";

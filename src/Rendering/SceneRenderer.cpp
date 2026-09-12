@@ -40,7 +40,9 @@ uniform vec3 lightDir;
 uniform vec3 meshColor;
 uniform bool useNormalsColor;
 uniform sampler2D diffuseTexture;
+uniform sampler2D glowTexture;
 uniform bool hasTexture;
+uniform bool hasGlowTexture;
 uniform bool enableTextures;
 uniform bool isAdditive;
 uniform float alphaCutoff;
@@ -59,12 +61,18 @@ void main() {
 
     vec4 finalColor = texColor * VertexColor;
 
-    if (alphaCutoff > 0.0 && finalColor.a < alphaCutoff) {
+    float effectiveCutoff = max(alphaCutoff, (hasTexture && enableTextures) ? 0.005 : 0.0);
+    if (effectiveCutoff > 0.0 && finalColor.a < effectiveCutoff) {
         discard;
     }
 
+    vec3 glow = vec3(0.0);
+    if (hasGlowTexture && enableTextures) {
+        glow = texture(glowTexture, TexCoords).rgb;
+    }
+
     if (isAdditive) {
-        FragColor = finalColor;
+        FragColor = vec4(finalColor.rgb + glow, finalColor.a);
     } else {
         vec3 norm = normalize(Normal);
         vec3 light = normalize(-lightDir);
@@ -75,7 +83,7 @@ void main() {
         vec3 base = (hasTexture && enableTextures) ? finalColor.rgb : (meshColor * VertexColor.rgb);
         vec3 ambient = base * 0.35;
         vec3 diffuse = base * lightIntensity * 0.65;
-        FragColor = vec4(ambient + diffuse, finalColor.a);
+        FragColor = vec4(ambient + diffuse + glow, finalColor.a);
     }
 }
 )";
@@ -87,8 +95,10 @@ void RenderUniforms::init(GLuint prog) {
     lightDir = glGetUniformLocation(prog, "lightDir");
     useNormalsColor = glGetUniformLocation(prog, "useNormalsColor");
     diffuseTexture = glGetUniformLocation(prog, "diffuseTexture");
+    glowTexture = glGetUniformLocation(prog, "glowTexture");
     enableTextures = glGetUniformLocation(prog, "enableTextures");
     hasTexture = glGetUniformLocation(prog, "hasTexture");
+    hasGlowTexture = glGetUniformLocation(prog, "hasGlowTexture");
     meshColor = glGetUniformLocation(prog, "meshColor");
     isAdditive = glGetUniformLocation(prog, "isAdditive");
     alphaCutoff = glGetUniformLocation(prog, "alphaCutoff");
@@ -146,6 +156,7 @@ void SceneRenderer::render(const SceneData& scene, const OrbitCamera& camera, Fr
     glUniform3fv(uniforms.lightDir, 1, glm::value_ptr(settings.lightDir));
     glUniform1i(uniforms.useNormalsColor, settings.useNormalsColor ? 1 : 0);
     glUniform1i(uniforms.diffuseTexture, 0);
+    glUniform1i(uniforms.glowTexture, 1);
     glUniform1i(uniforms.enableTextures, settings.enableTextures ? 1 : 0);
 
     // Base transform (e.g. rotate Z-up to Y-up)
@@ -158,22 +169,21 @@ void SceneRenderer::render(const SceneData& scene, const OrbitCamera& camera, Fr
     struct TransparentEntry
     {
         const RenderableMesh* mesh;
-        float distSq;
+        float viewDepth;
     };
     static std::vector<const RenderableMesh*> opaqueMeshes;
     static std::vector<TransparentEntry> transparentSorted;
     opaqueMeshes.clear();
     transparentSorted.clear();
 
-    glm::vec3 camPos = camera.getEyePosition();
-
     for (const auto& mesh : scene.meshes) {
         if (!mesh.visible) continue;
         if (mesh.isHidden && !settings.showHidden) continue;
         if (mesh.hasAlphaBlend) {
-            glm::vec3 pos = settings.rotateZtoY ? glm::vec3(baseModel * glm::vec4(mesh.worldCenter, 1.0f)) : mesh.worldCenter;
-            glm::vec3 diff = camPos - pos;
-            transparentSorted.push_back({ &mesh, glm::dot(diff, diff) });
+            glm::vec3 worldPos = settings.rotateZtoY ? glm::vec3(baseModel * glm::vec4(mesh.worldCenter, 1.0f)) : mesh.worldCenter;
+            glm::vec4 viewPos = view * glm::vec4(worldPos, 1.0f);
+            float viewDepth = -viewPos.z; // In OpenGL view space, depth along camera forward axis is -Z
+            transparentSorted.push_back({ &mesh, viewDepth });
         }
         else {
             opaqueMeshes.push_back(&mesh);
@@ -182,9 +192,14 @@ void SceneRenderer::render(const SceneData& scene, const OrbitCamera& camera, Fr
 
     // State cache to avoid redundant OpenGL driver calls
     GLuint boundTexId = 0;
+    GLuint boundGlowTexId = 0;
     int currentHasTexture = -1;
+    int currentHasGlowTexture = -1;
     float currentAlphaCutoff = -999.0f;
     int currentIsAdditive = -1;
+    bool currentDepthTest = true;
+    GLenum currentDepthFunc = GL_LEQUAL;
+    bool currentDepthWrite = true;
 
     auto applyMeshState = [&](const RenderableMesh& mesh, float targetCutoff, int targetAdditive) {
         glm::mat4 modelMatrix = baseModel * mesh.transform;
@@ -208,6 +223,21 @@ void SceneRenderer::render(const SceneData& scene, const OrbitCamera& camera, Fr
             glUniform3fv(uniforms.meshColor, 1, glm::value_ptr(mesh.baseColor));
         }
 
+        bool glowActive = (settings.enableTextures && mesh.hasGlowTexture && mesh.glowTextureId != 0);
+        int hasGlowInt = glowActive ? 1 : 0;
+        if (hasGlowInt != currentHasGlowTexture) {
+            glUniform1i(uniforms.hasGlowTexture, hasGlowInt);
+            currentHasGlowTexture = hasGlowInt;
+        }
+
+        if (glowActive) {
+            if (mesh.glowTextureId != boundGlowTexId) {
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, mesh.glowTextureId);
+                boundGlowTexId = mesh.glowTextureId;
+            }
+        }
+
         if (targetCutoff != currentAlphaCutoff) {
             glUniform1f(uniforms.alphaCutoff, targetCutoff);
             currentAlphaCutoff = targetCutoff;
@@ -218,31 +248,49 @@ void SceneRenderer::render(const SceneData& scene, const OrbitCamera& camera, Fr
             currentIsAdditive = targetAdditive;
         }
 
+        if (mesh.depthTest != currentDepthTest) {
+            if (mesh.depthTest) glEnable(GL_DEPTH_TEST);
+            else glDisable(GL_DEPTH_TEST);
+            currentDepthTest = mesh.depthTest;
+        }
+        if (mesh.depthTest && mesh.depthFunc != currentDepthFunc) {
+            glDepthFunc(mesh.depthFunc);
+            currentDepthFunc = mesh.depthFunc;
+        }
+
+        bool targetDepthWrite = mesh.depthWrite && (targetAdditive == 0);
+        if (targetDepthWrite != currentDepthWrite) {
+            glDepthMask(targetDepthWrite ? GL_TRUE : GL_FALSE);
+            currentDepthWrite = targetDepthWrite;
+        }
+
         glBindVertexArray(mesh.vao);
         glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_INT, 0);
     };
 
     // Pass 1: Opaque meshes (depth write enabled, blending disabled)
     glDisable(GL_BLEND);
+    glDisable(GL_POLYGON_OFFSET_FILL);
     glDepthMask(GL_TRUE);
+    currentDepthWrite = true;
 
     for (const auto* m : opaqueMeshes) {
-        float cutoff = m->hasAlphaTest ? std::max(m->alphaTestRef, 0.001f) : (settings.enableTextures ? 0.05f : 0.0f);
+        float cutoff = m->hasAlphaTest ? std::max(m->alphaTestRef, 0.001f) : 0.0f;
         applyMeshState(*m, cutoff, 0);
     }
 
-    // Pass 2: Transparent / blended meshes (sorted back-to-front, depth write disabled)
+    // Pass 2: Transparent / blended meshes (sorted back-to-front)
     if (!transparentSorted.empty()) {
         std::sort(transparentSorted.begin(), transparentSorted.end(),
                   [](const TransparentEntry& a, const TransparentEntry& b) {
-            return a.distSq > b.distSq;
+            return a.viewDepth > b.viewDepth;
         });
 
         glEnable(GL_BLEND);
-        glDepthMask(GL_FALSE);
 
         GLenum curSrc = 0, curDest = 0;
         bool cullingDisabledForAdditive = false;
+        bool polyOffsetActive = false;
 
         for (const auto& entry : transparentSorted) {
             const auto* m = entry.mesh;
@@ -267,11 +315,28 @@ void SceneRenderer::render(const SceneData& scene, const OrbitCamera& camera, Fr
                 }
             }
 
+            // Polygon offset for co-planar decals (e.g. ground textures with alpha blend but no alpha test)
+            bool needsPolyOffset = (m->hasAlphaBlend && !m->hasAlphaTest && !m->isAdditive);
+            if (needsPolyOffset != polyOffsetActive) {
+                if (needsPolyOffset) {
+                    glEnable(GL_POLYGON_OFFSET_FILL);
+                    glPolygonOffset(-1.0f, -1.0f);
+                }
+                else {
+                    glDisable(GL_POLYGON_OFFSET_FILL);
+                }
+                polyOffsetActive = needsPolyOffset;
+            }
+
             float cutoff = m->hasAlphaTest ? m->alphaTestRef : 0.0f;
             applyMeshState(*m, cutoff, m->isAdditive ? 1 : 0);
         }
 
-        // Restore culling and depth mask
+        if (polyOffsetActive) {
+            glDisable(GL_POLYGON_OFFSET_FILL);
+        }
+
+        // Restore culling, depth mask, depth test, and blend
         if (settings.culling) {
             glEnable(GL_CULL_FACE);
         }
@@ -279,10 +344,15 @@ void SceneRenderer::render(const SceneData& scene, const OrbitCamera& camera, Fr
             glDisable(GL_CULL_FACE);
         }
         glDepthMask(GL_TRUE);
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
         glDisable(GL_BLEND);
     }
 
     glBindVertexArray(0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);

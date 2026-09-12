@@ -65,8 +65,11 @@ void SceneHierarchyView::renderMeshList(SceneData& sceneData) {
             std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
             std::string texLower = mesh.textureFilename;
             std::transform(texLower.begin(), texLower.end(), texLower.begin(), ::tolower);
+            std::string glowLower = mesh.glowTextureFilename;
+            std::transform(glowLower.begin(), glowLower.end(), glowLower.begin(), ::tolower);
             if (nameLower.find(filterStr) != std::string::npos ||
                 texLower.find(filterStr) != std::string::npos ||
+                glowLower.find(filterStr) != std::string::npos ||
                 std::to_string(i).find(filterStr) != std::string::npos) {
                 m_filteredMeshIndices.push_back(static_cast<int>(i));
             }
@@ -88,19 +91,29 @@ void SceneHierarchyView::renderMeshList(SceneData& sceneData) {
             ImGui::ColorEdit3("##col", &mesh.baseColor.x, ImGuiColorEditFlags_NoInputs);
             ImGui::SameLine();
 
+            std::string glowTag;
+            if (mesh.hasGlowTexture) {
+                glowTag = " [Glow: " + mesh.glowTextureFilename + (mesh.glowTextureId != 0 ? "" : " (missing)") + "]";
+            }
+
             if (mesh.hasTexture) {
                 if (mesh.textureId != 0) {
                     ImGui::TextColored(mesh.isHidden ? ImVec4(0.55f, 0.85f, 0.55f, 1.0f) : ImVec4(0.4f, 1.0f, 0.4f, 1.0f),
-                                       "%s (%u tris)%s [Tex: %s]",
+                                       "%s (%u tris)%s [Tex: %s]%s",
                                        mesh.name.c_str(), mesh.indexCount / 3, mesh.hiddenTag.c_str(),
-                                       mesh.textureFilename.c_str());
+                                       mesh.textureFilename.c_str(), glowTag.c_str());
                 }
                 else {
                     ImGui::TextColored(mesh.isHidden ? ImVec4(0.75f, 0.55f, 0.35f, 1.0f) : ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
-                                       "%s (%u tris)%s [Missing: %s]",
+                                       "%s (%u tris)%s [Missing: %s]%s",
                                        mesh.name.c_str(), mesh.indexCount / 3, mesh.hiddenTag.c_str(),
-                                       mesh.textureFilename.c_str());
+                                       mesh.textureFilename.c_str(), glowTag.c_str());
                 }
+            }
+            else if (mesh.hasGlowTexture) {
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f),
+                                   "%s (%u tris)%s%s",
+                                   mesh.name.c_str(), mesh.indexCount / 3, mesh.hiddenTag.c_str(), glowTag.c_str());
             }
             else {
                 if (mesh.isHidden) {

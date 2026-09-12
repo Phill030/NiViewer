@@ -132,6 +132,12 @@ int main(int argc, char** argv) {
                         file, mesh.texturePath, mesh.embeddedPixelDataIndex, ui.getCustomTextureDir(), modelDir
                     );
                 }
+
+                if (mesh.hasGlowTexture) {
+                    mesh.glowTextureId = textureManager.getOrCreateTexture(
+                        file, mesh.glowTexturePath, mesh.glowEmbeddedPixelDataIndex, ui.getCustomTextureDir(), modelDir
+                    );
+                }
             }
 
             camera.frameBounds(sceneData.getEffectiveMinBound(), sceneData.getEffectiveMaxBound());
@@ -159,6 +165,11 @@ int main(int argc, char** argv) {
                         file, mesh.texturePath, mesh.embeddedPixelDataIndex, ui.getCustomTextureDir(), modelDir
                     );
                 }
+                if (mesh.hasGlowTexture) {
+                    mesh.glowTextureId = textureManager.getOrCreateTexture(
+                        file, mesh.glowTexturePath, mesh.glowEmbeddedPixelDataIndex, ui.getCustomTextureDir(), modelDir
+                    );
+                }
             }
         }
         catch (const std::exception& e) {
@@ -166,7 +177,7 @@ int main(int argc, char** argv) {
         }
     };
 
-    // Configure UI Callbacks
+    // UI Callbacks
     ui.onLoadFile = loadNifFile;
     ui.onReloadTextures = reloadTextures;
     ui.onResetCamera = [&]() {
@@ -225,10 +236,10 @@ int main(int argc, char** argv) {
             }
         }
 
-        // 1. Render 3D Scene to offscreen Framebuffer
+        // Render 3D Scene to offscreen Framebuffer
         renderer.render(sceneData, camera, fbo, renderSettings);
 
-        // 2. Render ImGui UI
+        // Render ImGui UI
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -237,7 +248,7 @@ int main(int argc, char** argv) {
 
         ImGui::Render();
 
-        // 3. Final display presentation
+        // Final presentation
         int display_w, display_h;
         glfwGetFramebufferSize(window, &display_w, &display_h);
         glViewport(0, 0, display_w, display_h);

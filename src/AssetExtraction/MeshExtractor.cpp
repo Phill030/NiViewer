@@ -7,6 +7,7 @@
 #include "Blocks/Property/NiTexturingProperty.hpp"
 #include "Blocks/Property/NiMaterialProperty.hpp"
 #include "Blocks/Property/NiAlphaProperty.hpp"
+#include "Blocks/Property/NiZBufferProperty.hpp"
 #include "Blocks/NiDataStream.hpp"
 #include "Blocks/Data/NiStringExtraData.hpp"
 #include "Blocks/Data/NiTriShapeData.hpp"
@@ -68,10 +69,13 @@ void MeshExtractor::uploadMeshToGPU(const std::string& name,
                                     const glm::mat4& worldTransform,
                                     const std::string& texturePath,
                                     int embeddedPixelDataIndex,
+                                    const std::string& glowTexturePath,
+                                    int glowEmbeddedPixelDataIndex,
                                     bool isHidden,
                                     bool hiddenByFlag,
                                     bool hiddenByMissingProperty,
                                     const NiAlphaProperty* alphaProp,
+                                    const NiZBufferProperty* zbufProp,
                                     bool hasVertexColors,
                                     SceneData& outScene) {
     if (vertices.empty() || indices.empty()) return;
@@ -82,6 +86,11 @@ void MeshExtractor::uploadMeshToGPU(const std::string& name,
     mesh.texturePath = texturePath;
     mesh.embeddedPixelDataIndex = embeddedPixelDataIndex;
     mesh.hasTexture = (!texturePath.empty() || embeddedPixelDataIndex >= 0);
+
+    mesh.glowTexturePath = glowTexturePath;
+    mesh.glowEmbeddedPixelDataIndex = glowEmbeddedPixelDataIndex;
+    mesh.hasGlowTexture = (!glowTexturePath.empty() || glowEmbeddedPixelDataIndex >= 0);
+
     mesh.vertexCount = static_cast<unsigned int>(vertices.size());
     mesh.indexCount = static_cast<unsigned int>(indices.size());
     mesh.isHidden = isHidden;
@@ -99,6 +108,18 @@ void MeshExtractor::uploadMeshToGPU(const std::string& name,
     }
     else if (embeddedPixelDataIndex >= 0) {
         mesh.textureFilename = "PixelData_" + std::to_string(embeddedPixelDataIndex);
+    }
+
+    if (!glowTexturePath.empty()) {
+        try {
+            mesh.glowTextureFilename = fs::path(glowTexturePath).filename().string();
+        }
+        catch (...) {
+            mesh.glowTextureFilename = glowTexturePath;
+        }
+    }
+    else if (glowEmbeddedPixelDataIndex >= 0) {
+        mesh.glowTextureFilename = "PixelData_" + std::to_string(glowEmbeddedPixelDataIndex);
     }
 
     if (mesh.isHidden) {
@@ -125,6 +146,24 @@ void MeshExtractor::uploadMeshToGPU(const std::string& name,
         mesh.alphaTestFunc = static_cast<uint32_t>(alphaProp->testFunc());
         mesh.alphaTestRef = alphaProp->testThreshold();
         mesh.isAdditive = (mesh.hasAlphaBlend && (mesh.destBlend == GL_ONE || mesh.srcBlend == GL_ONE));
+        mesh.noSorter = alphaProp->noSorter();
+    }
+
+    if (zbufProp) {
+        uint16_t zflags = static_cast<uint16_t>(zbufProp->GetFlags());
+        mesh.depthTest = (zflags & 1) != 0;
+        mesh.depthWrite = (zflags & 2) != 0;
+        switch (zbufProp->GetTestFunc()) {
+            case ZBufferTestFunction::Always: mesh.depthFunc = GL_ALWAYS; break;
+            case ZBufferTestFunction::Less: mesh.depthFunc = GL_LESS; break;
+            case ZBufferTestFunction::Equal: mesh.depthFunc = GL_EQUAL; break;
+            case ZBufferTestFunction::LessEqual: mesh.depthFunc = GL_LEQUAL; break;
+            case ZBufferTestFunction::Greater: mesh.depthFunc = GL_GREATER; break;
+            case ZBufferTestFunction::NotEqual: mesh.depthFunc = GL_NOTEQUAL; break;
+            case ZBufferTestFunction::GreaterEqual: mesh.depthFunc = GL_GEQUAL; break;
+            case ZBufferTestFunction::Never: mesh.depthFunc = GL_NEVER; break;
+            default: mesh.depthFunc = GL_LEQUAL; break;
+        }
     }
 
     if (mesh.hasAlphaBlend) {
@@ -208,9 +247,12 @@ void MeshExtractor::traverseNode(NiFile& file, NiAvObject* obj, int blockIndex, 
                                  std::unordered_set<const NiAvObject*>& visitedObjects,
                                  const std::string& parentTexturePath,
                                  int parentEmbeddedPixelDataIndex,
+                                 const std::string& parentGlowTexturePath,
+                                 int parentGlowEmbeddedPixelDataIndex,
                                  bool parentHidden,
                                  bool parentHasTexturingOrShaderLighting,
-                                 std::shared_ptr<NiAlphaProperty> parentAlphaProperty) {
+                                 std::shared_ptr<NiAlphaProperty> parentAlphaProperty,
+                                 std::shared_ptr<NiZBufferProperty> parentZBufferProperty) {
     if (!obj) return;
     if (!visitedObjects.insert(obj).second) {
         return;
@@ -238,16 +280,22 @@ void MeshExtractor::traverseNode(NiFile& file, NiAvObject* obj, int blockIndex, 
         }
     }
 
-    // Extract texture path, embedded pixel data, and alpha property
+    // Extract texture path, embedded pixel data, alpha property, and zbuffer property
     std::string texturePath = parentTexturePath;
     int embeddedPixelDataIndex = parentEmbeddedPixelDataIndex;
+    std::string glowTexturePath = parentGlowTexturePath;
+    int glowEmbeddedPixelDataIndex = parentGlowEmbeddedPixelDataIndex;
     bool hasTexturingOrShaderLighting = parentHasTexturingOrShaderLighting;
     std::shared_ptr<NiAlphaProperty> alphaProperty = parentAlphaProperty;
+    std::shared_ptr<NiZBufferProperty> zbufferProperty = parentZBufferProperty;
 
     for (uint32_t propIdx : obj->properties) {
         if (propIdx < file.blocks.size() && file.blocks[propIdx]) {
             if (auto ap = dynamic_pointer_cast<NiAlphaProperty>(file.blocks[propIdx])) {
                 alphaProperty = ap;
+            }
+            if (auto zb = dynamic_pointer_cast<NiZBufferProperty>(file.blocks[propIdx])) {
+                zbufferProperty = zb;
             }
             if (auto texProp = dynamic_pointer_cast<NiTexturingProperty>(file.blocks[propIdx])) {
                 hasTexturingOrShaderLighting = true;
@@ -259,6 +307,19 @@ void MeshExtractor::traverseNode(NiFile& file, NiAvObject* obj, int blockIndex, 
                             if (srcTex->unknownLink >= 0 && srcTex->unknownLink < (int)file.blocks.size()) {
                                 if (dynamic_pointer_cast<NiPixelData>(file.blocks[srcTex->unknownLink])) {
                                     embeddedPixelDataIndex = srcTex->unknownLink;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (texProp->hasGlowTexture && texProp->glowTexture) {
+                    int glowSrcIdx = texProp->glowTexture->source.value;
+                    if (glowSrcIdx >= 0 && glowSrcIdx < (int)file.blocks.size() && file.blocks[glowSrcIdx]) {
+                        if (auto srcTex = dynamic_pointer_cast<NiSourceTexture>(file.blocks[glowSrcIdx])) {
+                            glowTexturePath = srcTex->filePath;
+                            if (srcTex->unknownLink >= 0 && srcTex->unknownLink < (int)file.blocks.size()) {
+                                if (dynamic_pointer_cast<NiPixelData>(file.blocks[srcTex->unknownLink])) {
+                                    glowEmbeddedPixelDataIndex = srcTex->unknownLink;
                                 }
                             }
                         }
@@ -283,7 +344,7 @@ void MeshExtractor::traverseNode(NiFile& file, NiAvObject* obj, int blockIndex, 
         }
     }
 
-    if (!texturePath.empty() || embeddedPixelDataIndex >= 0) {
+    if (!texturePath.empty() || embeddedPixelDataIndex >= 0 || !glowTexturePath.empty() || glowEmbeddedPixelDataIndex >= 0) {
         hasTexturingOrShaderLighting = true;
     }
 
@@ -293,8 +354,10 @@ void MeshExtractor::traverseNode(NiFile& file, NiAvObject* obj, int blockIndex, 
             auto child = childRef.getReference(file);
             if (child) {
                 traverseNode(file, child, childRef.value, currentTransform, outScene, &nodeInfo, visitedObjects,
-                             texturePath, embeddedPixelDataIndex, isHiddenByFlag, hasTexturingOrShaderLighting,
-                             alphaProperty);
+                             texturePath, embeddedPixelDataIndex,
+                             glowTexturePath, glowEmbeddedPixelDataIndex,
+                             isHiddenByFlag, hasTexturingOrShaderLighting,
+                             alphaProperty, zbufferProperty);
             }
         }
     }
@@ -364,8 +427,9 @@ void MeshExtractor::traverseNode(NiFile& file, NiAvObject* obj, int blockIndex, 
             bool hasVertColors = triData->hasVertexColors && !triData->vertexColors.empty();
             uploadMeshToGPU(triShape->name, vertices, indices, currentTransform,
                             texturePath, embeddedPixelDataIndex,
+                            glowTexturePath, glowEmbeddedPixelDataIndex,
                             isHidden, isHiddenByFlag, isHiddenByMissingProperty,
-                            alphaProperty.get(), hasVertColors, outScene);
+                            alphaProperty.get(), zbufferProperty.get(), hasVertColors, outScene);
         }
     }
     else if (auto meshObj = dynamic_cast<NiMesh*>(obj)) {
@@ -537,8 +601,9 @@ void MeshExtractor::traverseNode(NiFile& file, NiAvObject* obj, int blockIndex, 
 
             uploadMeshToGPU(meshObj->name, vertices, indices, currentTransform,
                             texturePath, embeddedPixelDataIndex,
+                            glowTexturePath, glowEmbeddedPixelDataIndex,
                             isHidden, isHiddenByFlag, isHiddenByMissingProperty,
-                            alphaProperty.get(), hasVertColors, outScene);
+                            alphaProperty.get(), zbufferProperty.get(), hasVertColors, outScene);
         }
     }
     else {
@@ -611,6 +676,11 @@ SceneData MeshExtractor::extractScene(NiFile& file) {
             else if (auto ap = dynamic_pointer_cast<NiAlphaProperty>(block)) {
                 entry.details = "blend: " + std::string(ap->alphaBlend() ? "yes" : "no") +
                     ", test: " + std::string(ap->alphaTest() ? "yes" : "no");
+            }
+            else if (auto zb = dynamic_pointer_cast<NiZBufferProperty>(block)) {
+                uint16_t zf = static_cast<uint16_t>(zb->GetFlags());
+                entry.details = "test: " + std::string((zf & 1) ? "yes" : "no") +
+                    ", write: " + std::string((zf & 2) ? "yes" : "no");
             }
             else if (auto strExtra = dynamic_pointer_cast<NiStringExtraData>(block)) {
                 entry.details = "str: \"" + strExtra->stringData + "\"";

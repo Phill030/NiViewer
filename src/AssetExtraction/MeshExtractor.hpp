@@ -12,6 +12,7 @@ struct NiAvObject;
 struct NiNode;
 
 struct NiAlphaProperty;
+struct NiZBufferProperty;
 
 #include "Core/SceneTypes.hpp"
 
@@ -28,10 +29,13 @@ private:
                                 const glm::mat4& worldTransform,
                                 const std::string& texturePath,
                                 int embeddedPixelDataIndex,
+                                const std::string& glowTexturePath,
+                                int glowEmbeddedPixelDataIndex,
                                 bool isHidden,
                                 bool hiddenByFlag,
                                 bool hiddenByMissingProperty,
                                 const NiAlphaProperty* alphaProp,
+                                const NiZBufferProperty* zbufProp,
                                 bool hasVertexColors,
                                 SceneData& outScene);
     static void traverseNode(NiFile& file, NiAvObject* obj, int blockIndex, const glm::mat4& parentTransform,
@@ -39,7 +43,10 @@ private:
                              std::unordered_set<const NiAvObject*>& visitedObjects,
                              const std::string& parentTexturePath = "",
                              int parentEmbeddedPixelDataIndex = -1,
+                             const std::string& parentGlowTexturePath = "",
+                             int parentGlowEmbeddedPixelDataIndex = -1,
                              bool parentHidden = false,
                              bool parentHasTexturingOrShaderLighting = false,
-                             std::shared_ptr<NiAlphaProperty> parentAlphaProperty = nullptr);
+                             std::shared_ptr<NiAlphaProperty> parentAlphaProperty = nullptr,
+                             std::shared_ptr<NiZBufferProperty> parentZBufferProperty = nullptr);
 };

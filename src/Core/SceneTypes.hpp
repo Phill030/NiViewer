@@ -28,11 +28,19 @@ struct RenderableMesh
     int embeddedPixelDataIndex = -1;
     bool hasTexture = false;
     GLuint textureId = 0;
+
+    // Glow / Emissive texture
+    std::string glowTexturePath;
+    int glowEmbeddedPixelDataIndex = -1;
+    bool hasGlowTexture = false;
+    GLuint glowTextureId = 0;
+    std::string glowTextureFilename;
+
     bool isHidden = false;
     bool hiddenByFlag = false;
     bool hiddenByMissingProperty = false;
 
-    // Alpha / Blending properties
+    // Alpha / Blending
     bool hasAlphaBlend = false;
     GLenum srcBlend = 0x0302;  // GL_SRC_ALPHA
     GLenum destBlend = 0x0303; // GL_ONE_MINUS_SRC_ALPHA
@@ -41,8 +49,14 @@ struct RenderableMesh
     float alphaTestRef = 0.0f;
     bool isAdditive = false;
     bool hasVertexColors = false;
+    bool noSorter = false;
 
-    // Cached UI strings to avoid per-frame allocations
+    // Depth / ZBuffer properties
+    bool depthTest = true;
+    bool depthWrite = true;
+    GLenum depthFunc = 0x0203; // GL_LEQUAL
+
+    // Cached UI strings
     std::string textureFilename;
     std::string hiddenTag;
     std::string tooltipReason;
@@ -55,11 +69,16 @@ struct RenderableMesh
         vertexCount = 0;
         texturePath.clear();
         textureFilename.clear();
+        glowTexturePath.clear();
+        glowTextureFilename.clear();
         hiddenTag.clear();
         tooltipReason.clear();
         embeddedPixelDataIndex = -1;
+        glowEmbeddedPixelDataIndex = -1;
         hasTexture = false;
+        hasGlowTexture = false;
         textureId = 0;
+        glowTextureId = 0;
         isHidden = false;
         hiddenByFlag = false;
         hiddenByMissingProperty = false;
@@ -67,6 +86,10 @@ struct RenderableMesh
         hasAlphaTest = false;
         isAdditive = false;
         hasVertexColors = false;
+        noSorter = false;
+        depthTest = true;
+        depthWrite = true;
+        depthFunc = 0x0203;
     }
 };
 
