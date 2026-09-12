@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <unordered_map>
 
-// Helper: Convert string attribute to ZoneType enum
+// Convert string attribute to ZoneType enum
 ZoneType ParseZoneType(const pugi::xml_attribute& typeAttr) {
 	if (!typeAttr) {
 		return ZoneType::Normal; // Default when Type attribute is omitted
@@ -16,7 +16,7 @@ ZoneType ParseZoneType(const pugi::xml_attribute& typeAttr) {
 	return ZoneType::Normal;
 }
 
-// Helper: Construct Zone from raw XML text
+// Construct Zone from raw XML text
 Zone CreateZone(std::string rawPath) {
     std::string name = rawPath;
     const size_t lastSlash = rawPath.find_last_of('/');
@@ -28,16 +28,13 @@ Zone CreateZone(std::string rawPath) {
     std::replace(filename.begin(), filename.end(), '/', '-');
 
     Zone zone(std::move(name), std::move(filename));
-    zone.rawPath = std::move(rawPath); // preserve the original "A/B/C" form for grouping/tooltips
+    zone.rawPath = std::move(rawPath);
     return zone;
 }
 
 std::vector<AccessPass> ParseDoc(const pugi::xml_document& doc, bool resolveCopies) {
     std::vector<AccessPass> passes;
-
-    // Maps pass Key -> vector of copied pass Keys (to resolve <CopyZonesFrom>)
     std::unordered_map<std::string, std::vector<std::string>> copyDirectives;
-    // Maps pass Key -> index in `passes` vector for fast lookup
     std::unordered_map<std::string, size_t> passLookup;
 
     for (pugi::xml_node passNode : doc.child("Privileges").children("AccessPass")) {
