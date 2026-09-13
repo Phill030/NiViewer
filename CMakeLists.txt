@@ -75,6 +75,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(pugixml)
 
+# Add zLib
+FetchContent_Declare(
+    zlib
+    GIT_REPOSITORY https://github.com/madler/zlib.git
+    GIT_TAG v1.3.2
+)
+FetchContent_MakeAvailable(zlib)
+
 set(HEADER_FILES
 	"src/NiViewer.h"
 
@@ -98,6 +106,11 @@ set(HEADER_FILES
     "src/AssetExtraction/MeshExtractor.hpp"
     "src/AssetExtraction/TextureManager.hpp"
     "src/AssetExtraction/ZoneParser.hpp"
+    "src/AssetExtraction/FileMapping.hpp"
+    "src/AssetExtraction/Wad/Archive.hpp"
+    "src/AssetExtraction/Wad/FileEntry.hpp"
+    "src/AssetExtraction/Wad/AssetData.hpp"
+    "src/AssetExtraction/Wad/ByteReader.hpp"
 )
 
 set(SOURCE_FILES
@@ -120,7 +133,7 @@ set(SOURCE_FILES
     "src/AssetExtraction/MeshExtractor.cpp"
     "src/AssetExtraction/TextureManager.cpp"
     "src/AssetExtraction/ZoneParser.cpp"
-
+    "src/AssetExtraction/FileMapping.cpp"
 )
 
 add_executable (NiViewer ${SOURCE_FILES} ${HEADER_FILES})
@@ -129,16 +142,16 @@ target_include_directories(NiViewer PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/external/NiForge/src"
 )
 
-# Link NiForge to the NiViewer target
-target_link_libraries(NiViewer PRIVATE NiForge)
-
 # Link GLFW, GLM, and ImGui to the NiViewer target
 target_include_directories(NiViewer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/viewer ${imgui_SOURCE_DIR}/backends ${glfw_SOURCE_DIR}/deps) # ??
-target_link_libraries(NiViewer PRIVATE NiForge imgui glm::glm opengl32 pugixml::pugixml)
-
-if (CMAKE_VERSION VERSION_GREATER 3.12)
-  set_property(TARGET NiViewer PROPERTY CXX_STANDARD 20)
-endif()
+target_link_libraries(NiViewer PRIVATE
+    NiForge
+    imgui
+    glm::glm
+    opengl32
+    pugixml::pugixml
+    ZLIB::ZLIB
+)
 
 # Copy DLL on Windows post-build
 if(WIN32)
