@@ -104,29 +104,28 @@ std::string TextureManager::resolveTextureFile(const std::string& rawPath,
 
     std::vector<fs::path> searchDirs;
     if (!modelDir.empty()) {
-        fs::path mPath(modelDir);
-        searchDirs.push_back(mPath);
-        searchDirs.push_back(mPath / "Textures");
-        searchDirs.push_back(mPath / "textures");
+        fs::path curr(modelDir);
+        for (int depth = 0; depth < 5 && !curr.empty() && curr != curr.parent_path(); ++depth) {
+            searchDirs.push_back(curr);
+            searchDirs.push_back(curr / "Textures");
+            searchDirs.push_back(curr / "textures");
 
-        // Check parent directory and sibling directories (e.g. sibling WADs like WorldData or Shared)
-        try {
-            fs::path parent = mPath.parent_path();
-            if (!parent.empty() && fs::exists(parent) && fs::is_directory(parent)) {
-                searchDirs.push_back(parent);
-                searchDirs.push_back(parent / "Textures");
-                searchDirs.push_back(parent / "textures");
-
-                for (const auto& entry : fs::directory_iterator(parent)) {
-                    if (entry.is_directory()) {
-                        searchDirs.push_back(entry.path());
-                        searchDirs.push_back(entry.path() / "Textures");
-                        searchDirs.push_back(entry.path() / "textures");
+            // Direct sibling directories
+            try {
+                if (fs::exists(curr) && fs::is_directory(curr)) {
+                    for (const auto& entry : fs::directory_iterator(curr)) {
+                        if (entry.is_directory()) {
+                            searchDirs.push_back(entry.path());
+                            searchDirs.push_back(entry.path() / "Textures");
+                            searchDirs.push_back(entry.path() / "textures");
+                        }
                     }
                 }
             }
+            catch (...) {}
+
+            curr = curr.parent_path();
         }
-        catch (...) {}
     }
 
     if (!customDir.empty()) {
@@ -192,13 +191,6 @@ GLuint TextureManager::uploadPixelDataToGL(const NiPixelData& pixelData) {
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-    if (pixelData.numMipMaps > 1) {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    }
-    else {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    }
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     // Anisotropic filtering if supported
@@ -259,18 +251,34 @@ GLuint TextureManager::uploadPixelDataToGL(const NiPixelData& pixelData) {
         }
     }
 
-    if (levelsUploaded == 1 && pixelData.numMipMaps <= 1) {
-        glGenerateMipmap(GL_TEXTURE_2D);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    }
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-
     if (levelsUploaded == 0) {
+        glBindTexture(GL_TEXTURE_2D, 0);
         glDeleteTextures(1, &texId);
         return 0;
     }
 
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+
+    bool isCompressed = (pixelData.pixelFormat == PixelFormat::PX_FMT_DXT1 ||
+                         pixelData.pixelFormat == PixelFormat::PX_FMT_DXT3 ||
+                         pixelData.pixelFormat == PixelFormat::PX_FMT_DXT5);
+
+    if (levelsUploaded > 1) {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(levelsUploaded - 1));
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    }
+    else {
+        if (!isCompressed) {
+            glGenerateMipmap(GL_TEXTURE_2D);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        }
+        else {
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        }
+    }
+
+    glBindTexture(GL_TEXTURE_2D, 0);
     return texId;
 }
 

@@ -449,38 +449,99 @@ void MeshExtractor::traverseNode(NiFile& file, NiAvObject* obj, int blockIndex, 
         NiDataStream* idxDataStream = nullptr;
         NiDataStream* posDataStream = nullptr;
 
+        bool hasPrimaryPos = false;
+        bool hasPrimaryMorph = false;
+        bool hasPrimaryNorm = false;
+        bool hasPrimaryUvs = false;
+        bool hasPrimaryCol = false;
+
         for (const auto& dsRef : meshObj->dataStreams) {
             auto ds = dsRef.stream.getReference(file);
             if (!ds) continue;
 
             for (const auto& s : ds->semanticData) {
                 if (auto posStream = dynamic_cast<DataStreamPosition*>(s.get())) {
-                    for (const auto& p : posStream->values) {
-                        primaryPositions.push_back(glm::vec3(p.x, p.y, p.z));
+                    if (posStream->index == 0) {
+                        if (!hasPrimaryPos) {
+                            primaryPositions.clear();
+                            hasPrimaryPos = true;
+                        }
+                        for (const auto& p : posStream->values) {
+                            primaryPositions.push_back(glm::vec3(p.x, p.y, p.z));
+                        }
+                        posRef = &dsRef;
+                        posDataStream = ds;
                     }
-                    if (!posRef) {
+                    else if (!hasPrimaryPos && primaryPositions.empty()) {
+                        for (const auto& p : posStream->values) {
+                            primaryPositions.push_back(glm::vec3(p.x, p.y, p.z));
+                        }
                         posRef = &dsRef;
                         posDataStream = ds;
                     }
                 }
                 else if (auto morphStream = dynamic_cast<DataStreamMorphPosition*>(s.get())) {
-                    for (const auto& p : morphStream->values) {
-                        morphPositions.push_back(glm::vec3(p.x, p.y, p.z));
+                    if (morphStream->index == 0) {
+                        if (!hasPrimaryMorph) {
+                            morphPositions.clear();
+                            hasPrimaryMorph = true;
+                        }
+                        for (const auto& p : morphStream->values) {
+                            morphPositions.push_back(glm::vec3(p.x, p.y, p.z));
+                        }
+                    }
+                    else if (!hasPrimaryMorph && morphPositions.empty()) {
+                        for (const auto& p : morphStream->values) {
+                            morphPositions.push_back(glm::vec3(p.x, p.y, p.z));
+                        }
                     }
                 }
                 else if (auto normStream = dynamic_cast<DataStreamNormal*>(s.get())) {
-                    for (const auto& n : normStream->values) {
-                        normals.push_back(glm::vec3(n.x, n.y, n.z));
+                    if (normStream->index == 0) {
+                        if (!hasPrimaryNorm) {
+                            normals.clear();
+                            hasPrimaryNorm = true;
+                        }
+                        for (const auto& n : normStream->values) {
+                            normals.push_back(glm::vec3(n.x, n.y, n.z));
+                        }
+                    }
+                    else if (!hasPrimaryNorm && normals.empty()) {
+                        for (const auto& n : normStream->values) {
+                            normals.push_back(glm::vec3(n.x, n.y, n.z));
+                        }
                     }
                 }
                 else if (auto uvStream = dynamic_cast<DataStreamTexCoord*>(s.get())) {
-                    for (const auto& t : uvStream->values) {
-                        uvs.push_back(glm::vec2(t.u, t.v));
+                    if (uvStream->index == 0) {
+                        if (!hasPrimaryUvs) {
+                            uvs.clear();
+                            hasPrimaryUvs = true;
+                        }
+                        for (const auto& t : uvStream->values) {
+                            uvs.push_back(glm::vec2(t.u, t.v));
+                        }
+                    }
+                    else if (!hasPrimaryUvs && uvs.empty()) {
+                        for (const auto& t : uvStream->values) {
+                            uvs.push_back(glm::vec2(t.u, t.v));
+                        }
                     }
                 }
                 else if (auto colStream = dynamic_cast<DataStreamColor*>(s.get())) {
-                    for (const auto& c : colStream->values) {
-                        colors.push_back(glm::vec4(c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, c.a / 255.0f));
+                    if (colStream->index == 0) {
+                        if (!hasPrimaryCol) {
+                            colors.clear();
+                            hasPrimaryCol = true;
+                        }
+                        for (const auto& c : colStream->values) {
+                            colors.push_back(glm::vec4(c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, c.a / 255.0f));
+                        }
+                    }
+                    else if (!hasPrimaryCol && colors.empty()) {
+                        for (const auto& c : colStream->values) {
+                            colors.push_back(glm::vec4(c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, c.a / 255.0f));
+                        }
                     }
                 }
                 else if (auto idxStream = dynamic_cast<DataStreamIndex*>(s.get())) {
@@ -722,6 +783,39 @@ SceneData MeshExtractor::extractScene(NiFile& file) {
             if (visitedObjects.find(avObj) == visitedObjects.end()) {
                 traverseNode(file, avObj, static_cast<int>(i), glm::mat4(1.0f), scene, nullptr, visitedObjects);
             }
+        }
+    }
+
+    // 5. If file has no 3D geometry but contains NiPixelData (i.e. it's a standalone texture NIF),
+    // create a preview quad so the texture can be viewed directly.
+    if (scene.meshes.empty()) {
+        int embeddedPixelDataIndex = -1;
+        for (size_t i = 0; i < file.blocks.size(); ++i) {
+            if (dynamic_cast<NiPixelData*>(file.blocks[i].get())) {
+                embeddedPixelDataIndex = static_cast<int>(i);
+                break;
+            }
+        }
+
+        if (embeddedPixelDataIndex >= 0) {
+            std::vector<Vertex> vertices = {
+                { glm::vec3(-50.0f, -50.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec2(0.0f, 1.0f), glm::vec4(1.0f) },
+                { glm::vec3( 50.0f, -50.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec2(1.0f, 1.0f), glm::vec4(1.0f) },
+                { glm::vec3( 50.0f,  50.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec2(1.0f, 0.0f), glm::vec4(1.0f) },
+                { glm::vec3(-50.0f,  50.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec2(0.0f, 0.0f), glm::vec4(1.0f) }
+            };
+            std::vector<uint32_t> indices = { 0, 1, 2, 0, 2, 3 };
+
+            uploadMeshToGPU("Texture_Preview", vertices, indices, glm::mat4(1.0f),
+                            "", embeddedPixelDataIndex,
+                            "", -1,
+                            false, false, false,
+                            nullptr, nullptr, false, scene);
+
+            scene.minBound = glm::vec3(-50.0f, -50.0f, -1.0f);
+            scene.maxBound = glm::vec3( 50.0f,  50.0f,  1.0f);
+            scene.visibleMinBound = scene.minBound;
+            scene.visibleMaxBound = scene.maxBound;
         }
     }
 
